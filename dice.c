@@ -11,9 +11,106 @@ void dice_notation_set_error(DiceNotation* notation, int errcode, const char* er
     notation->errmsg = errmsg;
 }
 
-void dice_notation_debug(){
+void dice_notation_init()
+{
+    srand(time(NULL));
+}
+
+void dice_notation_debug()
+{
     printf("# Sizes\n\tDiceNotation: %lu\n\tDiceNotationState: %lu\n\tDiceNotationCache: %lu\n\tDiceNotationCounters: %lu\n", sizeof(DiceNotation), sizeof(DiceNotationState), sizeof(DiceNotationCache), sizeof(DiceNotationCounters));
 }
+
+long dice_roll(DiceToken* dice_token){
+    int amount = 0;
+    int sides = 0;
+
+    int keep_high = 0;
+    int keep_low = 0;
+    
+    if(dice_token->amount != NULL){
+        amount = dice_token->amount->value;
+    } else {
+        amount = 1;
+    }
+    if(dice_token->sides != NULL){
+        sides = dice_token->sides->value;
+    } else {
+        printf("failed to get information for dice sides\n");
+        sides = 4;
+    }
+
+    if(amount < 1) {
+        printf("you can't roll <1 dice\n");
+        amount = 1;
+    }
+
+    uint8_t keep = 0;
+
+    if(dice_token->keep_high != NULL || dice_token->keep_low != NULL){
+        keep = 1;
+    }
+
+    if(keep == 1){
+        if(dice_token->keep_high != NULL){
+            keep_high = dice_token->keep_high->value;
+        } else {
+            keep_high = 0;
+        }
+        if(dice_token->keep_low != NULL){
+            keep_low = dice_token->keep_low->value;
+        } else {
+            keep_low = 0;
+        }
+    }
+
+    long result = 0;
+
+    int* values = calloc(sizeof(int), amount);
+    if(values == NULL){
+        printf("failed to allocate memory for amount of dice specified: %d\n", amount);
+        return 0;
+    }
+
+    for(unsigned int i = 0; i < amount; i++){
+        values[i] = (int)((rand() % sides) + 1);
+    }
+
+    if(keep == 1){
+        for(unsigned int i = 0; i < amount; i++){
+            for(unsigned int j = i++; j < amount; j++){
+                if(values[i] > values[j]){
+                    int temp_value = values[i];
+                    values[j] = values[i];
+                    values[i] = temp_value;
+                }
+            }
+        }
+
+        // to-do: make sure we don't need to flip the logic in the keep loops.
+        for(unsigned int i = 0; i < keep_high; i++){
+            int temp = values[amount - i];
+            // we'll check this later, but put a print statement here to remind ourselves later
+            printf("[DEBUG] (confirm that keep_high is working) rolling dice, got temp value: %d\n", temp);
+            result = result + temp;
+        }
+
+        for(unsigned int i = 0; i < keep_low; i++){
+            result = result + values[i];
+        }
+
+    } else {
+        for(unsigned int i = 0; i < amount; i++){
+            result = result + values[i];
+        }
+    }
+
+    free(values);
+    values = NULL;
+
+    return result;
+}
+
 
 // token setters
 void SetPairToken(PairToken* token, enum TokenType type, int value){
@@ -239,6 +336,7 @@ int dice_notation_organize_tokens(DiceNotation* notation){
                 math_token->location = real_token;
                 SetRealToken(real_token, counters->real_token_pos, token->type, TOKEN_MATH, math_token);
                 math_token->type = token->value;
+                math_token->group_priority = counters->group_priority;
                 counters->math_pos++;
             }; break;
             case TYPE_KEEP: {
@@ -305,6 +403,9 @@ int dice_notation_define_dice(DiceNotation* notation){
             RealToken* temp_token = &cache->real_tokens[i];
             if(temp_token == NULL){
                 // to-do: correctly handle the null value;
+                continue;
+            }
+            if(temp_token->used == 1){
                 continue;
             }
             enum TokenType cur_type = temp_token->type;
@@ -395,15 +496,167 @@ int dice_notation_define_dice(DiceNotation* notation){
     return 0;
 }
 
+// this should be called after groups are defined.
 int dice_notation_define_math(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
     DiceNotationCounters* counters = &notation->counters;
+
+    uint8_t check_groups = 0;
+
+    // if there's more than the default group count then we need to assign the appropriate group priority
+    if(counters->group_count > 1){
+        printf("checking groups\n");
+        check_groups = 1;
+    }
 
     for(uint8_t i = 0; i < counters->math_count; i++){
         MathToken* math_token = &cache->math[i];
         RealToken* real_token = math_token->location;
 
-        math_token->priority = MathToken_GetPriority(math_token->type);
+        // what we're doing here is we're assigning how much we should care
+        switch(math_token->type){
+            case TYPE_ADD:
+            case TYPE_SUB:
+                math_token->priority = 4;
+                break;
+            case TYPE_MULT:
+            case TYPE_DIV:
+                math_token->priority = 3;
+                break;
+            case TYPE_EXP:
+                math_token->priority = 2;
+                break;
+            default: {
+                math_token->priority = 10;
+                printf("unknown math operator: %s\n", TokenType_as_string(math_token->type));
+            }; break;
+        }
+
+        if(check_groups == 0){
+            // in this case, assign them all to the default group
+            math_token->group = &cache->group[0];
+            continue;
+        }
+
+        uint64_t pos = math_token->location->pos;
+
+        // this is assuming the groups have been sorted correctly. (highest priority to lowest priority)
+        for(uint8_t group_pos = 0; group_pos < counters->group_count; group_pos++){
+            GroupToken* group_token = &cache->group[group_pos];
+            if(group_token == NULL){
+                dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "got null when trying to get a group token, this is required to figure out what order we do math in");
+                return 1;
+            }
+            if(group_token->priority != math_token->group_priority){
+                continue; // these should match
+            }
+
+            if(group_token->start_pos->pos <= pos <= group_token->end_pos->pos){
+                math_token->group = group_token;
+                break;
+            }
+        }
+    }
+
+    // now that we've defined some basic priority the fun part is defining what order the math tokens should be in
+
+    for(uint8_t i = 0; i < counters->math_count; i++){
+        MathToken* math_i = &cache->math[i];
+        for(uint8_t j = i+1; j < counters->math_count; j++){
+            MathToken* math_j = &cache->math[j];
+            uint8_t swap = 0;
+            if(math_i->group_priority < math_j->group_priority){
+                swap = 1;
+            } else if (math_i->group_priority == math_j->group_priority){
+                // check if they have equal pemdas priority
+                if(math_i->priority == math_j->priority){
+                    // sort for position
+                    if(math_i->location->pos > math_j->location->pos){
+                        swap = 1;
+                    }
+                } else if(math_i->priority < math_j->priority){
+                    swap = 1;
+                }
+            }
+
+            if(swap == 1){
+                MathToken temp;
+                memcpy(&temp, &cache->math[i], sizeof(MathToken));
+                memcpy(&cache->math[i], &cache->math[j], sizeof(MathToken));
+                memcpy(&cache->math[j], &temp, sizeof(MathToken));
+            }
+        }
+    }
+
+    // now that we've changed the order of the math tokens, lets update the real token references so they can back refrence the math tokens
+    for(uint8_t i = 0; i < counters->math_count; i++){
+        MathToken* math_token = &cache->math[i];
+        // very weird, but very much needed.
+        math_token->location->special = math_token;
+    }
+
+    // now that we know for a fact what order we need to process the math tokens in. we now need to assign ownership to the math operators on what goes before and after them.
+
+    for(uint8_t i = 0; i < counters->math_count; i++){
+        MathToken* math_token = &cache->math[i];
+        uint64_t pos = math_token->location->pos;
+
+        math_token->before = NULL;
+        math_token->after = NULL;
+
+        GroupToken* group_token = math_token->group;
+        for(uint64_t i = group_token->start_pos->pos; i < group_token->end_pos->pos+1; i++){
+            if(i == pos){
+                continue;
+            }
+            RealToken* real_token = &cache->real_tokens[i];
+            if(real_token == NULL){
+                dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "failed to get real token, while iterating through real tokens, to assign ownership of math tokens");
+                return 1;
+            }
+            
+            uint8_t can_assign = 1;
+            uint8_t check_used = 0;
+
+            // this is a scan for what data needs to be verified
+            switch(real_token->type){
+                case TYPE_NUM:
+                    check_used = 1;
+                    can_assign = 1;
+                    break;
+                case TYPE_GROUP_START:
+                case TYPE_GROUP_END: {
+                    check_used = 0;
+                    can_assign = 1;
+                }; break;
+                case TYPE_DICE:
+                    check_used = 1;
+                    can_assign = 1;
+                    break;
+                default: {
+                    can_assign = 0;
+                    continue;
+                }; break;
+            }
+
+            if(check_used == 1){
+                if(real_token->used == 1){
+                    continue;
+                }
+            }
+
+            if(can_assign == 1){
+                if(i < pos){
+                    math_token->before = real_token;
+                    real_token->used = 1;
+                } else {
+                    math_token->after = real_token;
+                    real_token->used = 1;
+                    break; // should break out here since our job is done.
+                }
+            }
+
+        }
     }
 
     return 0;
@@ -487,23 +740,36 @@ int dice_notation_define_groups(DiceNotation* notation){
         GroupToken* token_i = &cache->group[i];
         for(uint8_t j = i+1; j < counters->group_count; j++){
             GroupToken* token_j = &cache->group[j];
+            uint8_t swap = 0;
             if(token_i->priority < token_j->priority){
+                swap = 1;
+            } else if(token_i->priority == token_j->priority) {
+                // this is for cases where we have matching priority levels
+                if(token_i->start_pos > token_j->start_pos){
+                    swap = 1;
+                }
+            }
+
+            // this is better than writing it out multiple times
+            if(swap == 1){
                 GroupToken temp;
                 // don't you love copying memory directly :)
                 memcpy(&temp, &cache->group[i], sizeof(GroupToken));
                 memcpy(&cache->group[i], &cache->group[j], sizeof(GroupToken));
                 memcpy(&cache->group[j], &temp, sizeof(GroupToken));
-            } else if(token_i->priority == token_j->priority) {
-                // this is for cases where we have matching priority levels
-                if(token_i->start_pos > token_j->start_pos){
-                    GroupToken temp;
-                    // don't you love copying memory directly :)
-                    memcpy(&temp, &cache->group[i], sizeof(GroupToken));
-                    memcpy(&cache->group[i], &cache->group[j], sizeof(GroupToken));
-                    memcpy(&cache->group[j], &temp, sizeof(GroupToken));
-                }
             }
         }
+    }
+
+    // now that we've sorted our groups, lets make sure to update our placement tokens so they actually know what group they belong to.
+    for(uint8_t i = 0; i < counters->group_count; i++){
+        GroupToken* group_token = &cache->group[i];
+        if(group_token->priority == 0){
+            continue; // skip the default group
+        }
+        GroupPlacementToken* placement_token = group_token->start_pos->special;
+        // this may seem weird, but it is required since we did just change the order that the memory was sorted in.
+        placement_token->group = group_token;
     }
 
     return 0;
@@ -569,11 +835,12 @@ void dice_notation_print_data(DiceNotation* notation){
             }; break;
             case TOKEN_MATH: {
                 MathToken* math_token = (MathToken*)real_token->special;
-                printf("[%p] Math(op: %s)", math_token, TokenType_as_string(math_token->type));
+                int math_index = math_token - cache->math;
+                printf("[%p] Math(index: %d, op: %s, group: %p, group_priority: %d, priority: %d, before: %p, after: %p)", math_token, math_index, TokenType_as_string(math_token->type), math_token->group, math_token->group_priority, math_token->priority, math_token->before, math_token->after);
             }; break;
             case TOKEN_KEEP: {
                 KeepToken* keep_token = (KeepToken*)real_token->special;
-                printf("[%p] Keep()", keep_token);
+                printf("[%p] Keep(value: %p)", keep_token, keep_token->value);
             }; break;
             case TOKEN_GROUP_PLACEMENT: {
                 GroupPlacementToken* placement_token = (GroupPlacementToken*)real_token->special;
@@ -640,6 +907,13 @@ DiceNotation* dice_notation(const char *text)
 
     printf("test\n");
 
+    retvalue = dice_notation_define_keep(notation);
+    if(retvalue != 0){
+        printf("Error Occurred when defining keep:\n%s\n", notation->errmsg);
+        return notation;
+    }
+
+
     retvalue = dice_notation_define_dice(notation);
 
     if(retvalue != 0){
@@ -651,6 +925,13 @@ DiceNotation* dice_notation(const char *text)
 
     if(retvalue != 0){
         printf("Error Occurred when defining groups:\n%s\n", notation->errmsg);
+        return notation;
+    }
+
+    retvalue = dice_notation_define_math(notation);
+
+    if(retvalue != 0){
+        printf("Error Occurred when defining math tokens:\n%s\n", notation->errmsg);
         return notation;
     }
 
@@ -681,6 +962,41 @@ long dice_notation_run(DiceNotation *notation)
             continue;
         }
 
+        // walkthrough math
+        for(uint8_t i = 0; i < counters->math_count; i++){
+            MathToken* math_token = &cache->math[i];
+            if(math_token->group != group_token){
+                continue; // not our group so skip it.
+            }
+
+            // stash both of them in a temporary array that we can iterate through. that way we can process special types
+            RealToken* temp_tokens[2] = { math_token->before, math_token->after };
+            for(uint8_t temp_i = 0; temp_i < 2; temp_i++){
+                RealToken* temp_token = &temp_tokens[temp_i];
+                if(temp_token == NULL){
+                    printf("failed to accurately access temp cache for real token, got null value\n");
+                    continue;
+                }
+
+                switch(temp_token->type){
+                    case TYPE_DICE: {
+
+                    }; break;
+                    case TYPE_NUM: {
+
+                    }; break;
+                    case TYPE_GROUP_END: {
+
+                    }; break;
+                    case TYPE_GROUP_START: {
+
+                    }; break;
+                    default:
+                        break;
+                }
+            }
+        }
+
         for(uint64_t i = start_pos+1; i < end_pos; i++){
             RealToken* real_token = &cache->real_tokens[i];
             if(real_token == NULL){
@@ -691,8 +1007,6 @@ long dice_notation_run(DiceNotation *notation)
             if(real_token->used == 1){
                 continue;
             }
-
-
         }
 
 

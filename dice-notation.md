@@ -29,4 +29,10 @@ DiceNotation contains error handling and 3 different structs for data.
 
 # Processing Data
 
-need to define what belonds to what token.
+the key to processing the tokens is to walk through the tokens and define the ownership of each token in the correct order.
+
+1. Keep needs to claim numbers
+2. Dice needs to claim keep and numbers that define amount and sides
+3. Need to define groups
+4. Need to define math to assign priority
+    - could use the group priority to scale the operator priority
