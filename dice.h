@@ -11,6 +11,8 @@
 #define DN_ERROR_FAILED_ALLOC_CACHE 2
 #define DN_ERROR_BAD_ARG 3
 #define DN_ERROR_GOT_NULL 4
+#define DN_ERROR_LOGIC 5
+#define DN_ERROR_SYNTAX 6
 
 enum TokenType {
     TYPE_NONE,
@@ -22,6 +24,7 @@ enum TokenType {
     TYPE_SUB,
     TYPE_MULT,
     TYPE_DIV,
+    TYPE_EXP,
     TYPE_EMPTY,
     TYPE_GROUP_START,
     TYPE_GROUP_END,
@@ -46,13 +49,16 @@ typedef struct tagPairToken {
     int value;
 } PairToken;
 
-typedef struct tagTokenLocation {
+typedef struct tagRealToken {
+    enum TokenType type;
     uint64_t pos;
-    void* ref;
-} TokenLocation;
+    void* special;
+    enum TokenCategory category;
+    uint8_t used;
+} RealToken;
 
 typedef struct tagNumberToken {
-    TokenLocation location;
+    RealToken* location;
     // union {
     //     uint8_t u8;
     //     uint16_t u16;
@@ -71,14 +77,14 @@ typedef struct tagNumberToken {
 } NumberToken;
 
 typedef struct tagKeepToken {
-    TokenLocation location;
+    RealToken* location;
     enum TokenType type;
-    NumberToken* value;
+    RealToken* value;
     uint8_t used;
 } KeepToken;
 
 typedef struct tagDiceToken {
-    TokenLocation location;
+    RealToken* location;
     NumberToken* amount;
     NumberToken* sides;
     KeepToken* keep_high;
@@ -87,33 +93,26 @@ typedef struct tagDiceToken {
 } DiceToken;
 
 typedef struct tagMathToken {
-    TokenLocation location;
+    RealToken* location;
     enum TokenType type;
     uint8_t used;
+    uint8_t priority;
 } MathToken;
 
-typedef struct tagGroupPlacementToken {
-    TokenLocation location;
-    uint8_t priority;
-    uint8_t used;
-} GroupPlacementToken;
-
 typedef struct tagGroupToken {
-    TokenLocation location;
     uint8_t priority;
-    uint64_t start_pos;
-    uint64_t end_pos;
+    RealToken* start_pos;
+    RealToken* end_pos;
     long value;
     uint8_t used;
 } GroupToken;
 
-typedef struct tagRealToken {
-    enum TokenType type;
-    uint64_t pos;
-    void* special;
-    enum TokenCategory category;
+typedef struct tagGroupPlacementToken {
+    RealToken* location;
+    uint8_t priority;
     uint8_t used;
-} RealToken;
+    GroupToken* group;
+} GroupPlacementToken;
 
 typedef struct tagDiceNotationCache {
     PairToken* tokens;
@@ -125,6 +124,8 @@ typedef struct tagDiceNotationCache {
 
     GroupPlacementToken* start_tokens;
     GroupPlacementToken* end_tokens;
+
+    GroupToken* group;
 
     RealToken* real_tokens;
 } DiceNotationCache;
@@ -171,5 +172,7 @@ typedef struct tagDiceNotation {
 void dice_notation_debug();
 
 DiceNotation* dice_notation(const char* text);
+
+long dice_notation_run(DiceNotation* notation);
 
 #endif
