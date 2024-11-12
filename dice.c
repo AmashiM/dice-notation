@@ -22,11 +22,11 @@ void dice_notation_debug()
 }
 
 long dice_roll(DiceToken* dice_token){
-    int amount = 0;
-    int sides = 0;
+    unsigned int amount = 0;
+    unsigned int sides = 0;
 
-    int keep_high = 0;
-    int keep_low = 0;
+    unsigned int keep_high = 0;
+    unsigned int keep_low = 0;
     
     if(dice_token->amount != NULL){
         amount = dice_token->amount->value;
@@ -53,12 +53,35 @@ long dice_roll(DiceToken* dice_token){
 
     if(keep == 1){
         if(dice_token->keep_high != NULL){
-            keep_high = dice_token->keep_high->value;
+            RealToken* keep_high_token = dice_token->keep_high->value;
+            if(keep_high_token->type == TYPE_NUM){
+                NumberToken* number_token = keep_high_token->special;
+                if(number_token == NULL){
+                    printf("got null reference when trying to get a number token during dice rolls\n");
+                    keep_high = 0;
+                } else {
+                    keep_high = number_token->value;
+                }
+            } else {
+                printf("unhandled type in dice rolling\n");
+            }
+            
         } else {
             keep_high = 0;
         }
         if(dice_token->keep_low != NULL){
-            keep_low = dice_token->keep_low->value;
+            RealToken* keep_low_token = dice_token->keep_low->value;
+            if(keep_low_token->type == TYPE_NUM){
+                NumberToken* number_token = keep_low_token->special;
+                if(number_token == NULL){
+                    printf("got null reference when trying to get a number token during dice rolls\n");
+                    keep_low = 0;
+                } else {
+                    keep_low = number_token->value;
+                }
+            } else {
+                printf("unhandled type in dice rolling\n");
+            }
         } else {
             keep_low = 0;
         }
@@ -169,7 +192,6 @@ uint8_t MathToken_GetPriority(enum TokenType type){
     }
 }
 
-
 // main operations
 int dice_notation_parse_text(DiceNotation* notation){
     DiceNotationState* state = &notation->state;
@@ -230,6 +252,7 @@ int dice_notation_parse_text(DiceNotation* notation){
                 SetPairToken(token, TYPE_GROUP_END, 0);
                 counters->group_end_count++;
                 break;
+            // math token character received.
             case '+':
                 SetPairToken(token, TYPE_MATH, TYPE_ADD);
                 counters->math_count++;
@@ -246,6 +269,7 @@ int dice_notation_parse_text(DiceNotation* notation){
                 SetPairToken(token, TYPE_MATH, TYPE_MULT);
                 counters->math_count++;
                 break;
+            // keep high & keep low character identification.
             case 'h':
             case 'l':
                 printf("for some reason you processed an h or an l\n");
@@ -284,19 +308,54 @@ int dice_notation_parse_text(DiceNotation* notation){
     return 0;
 }
 
-int dice_notation_organize_tokens(DiceNotation* notation){
+int dice_notation_allocate_space_for_cache(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
     DiceNotationCounters* counters = &notation->counters;
 
     cache->dice = calloc(sizeof(DiceToken), counters->dice_count);
+    if(cache->dice == NULL){
+        dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "failed to allocate space for dice cache");
+        return 1;
+    }
     cache->math = calloc(sizeof(MathToken), counters->math_count);
+    if(cache->math == NULL){
+        dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "failed to allocate space for math cache");
+        return 1;
+    }
     cache->keep = calloc(sizeof(KeepToken), counters->keep_count);
+    if(cache->keep == NULL){
+        dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "failed to allocate space for keep cache");
+        return 1;
+    }
     cache->number = calloc(sizeof(NumberToken), counters->number_count);
+    if(cache->number == NULL){
+        dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "failed to allocate space for number cache");
+        return 1;
+    }
 
     cache->start_tokens = calloc(sizeof(GroupPlacementToken), counters->group_start_count);
+    if(cache->start_tokens == NULL){
+        dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "failed to allocate space for start_tokens cache");
+        return 1;
+    }
     cache->end_tokens = calloc(sizeof(GroupPlacementToken), counters->group_end_count);
+    if(cache->end_tokens == NULL){
+        dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "failed to allocate space for end_tokens cache");
+        return 1;
+    }
 
     cache->real_tokens = calloc(sizeof(RealToken), counters->real_token_count);
+    if(cache->real_tokens == NULL){
+        dice_notation_set_error(notation, DN_ERROR_GOT_NULL, "failed to allocate space for real_tokens cache");
+        return 1;
+    }
+
+    return 0;
+}
+
+int dice_notation_organize_tokens(DiceNotation* notation){
+    DiceNotationCache* cache = &notation->cache;
+    DiceNotationCounters* counters = &notation->counters;
 
     counters->group_priority = 0;
 
@@ -783,23 +842,49 @@ void dice_notation_clean(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
 
     // clean cache
-    free(cache->tokens);
-    cache->tokens = NULL;
-
     if(cache->tokens != NULL){
         free(cache->tokens);
         cache->tokens = NULL;
     }
 
-    free(cache->dice);
-    free(cache->keep);
-    free(cache->math);
-    free(cache->number);
+    if(cache->dice != NULL){
+        free(cache->dice);
+        cache->dice = NULL;
+    }
 
-    free(cache->start_tokens);
-    free(cache->end_tokens);
+    if(cache->keep != NULL){
+        free(cache->keep);
+        cache->keep = NULL;
+    }
 
-    free(cache->real_tokens);
+    if(cache->math != NULL){
+        free(cache->math);
+        cache->math = NULL;
+    }
+    
+    if(cache->number != NULL){
+        free(cache->number);
+        cache->number = NULL;
+    }
+
+    if(cache->start_tokens != NULL){
+        free(cache->start_tokens);
+        cache->start_tokens = NULL;
+    }
+
+    if(cache->end_tokens != NULL){
+        free(cache->end_tokens);
+        cache->end_tokens = NULL;
+    }
+
+    if(cache->group != NULL){
+        free(cache->group);
+        cache->group = NULL;
+    }
+
+    if(cache->real_tokens != NULL){
+        free(cache->real_tokens);
+    }
 
     // finally clear main notation
     free(notation);
@@ -899,6 +984,13 @@ DiceNotation* dice_notation(const char *text)
 
     PairTokens_PrintList(notation->cache.tokens, notation->state.length);
 
+    retvalue = dice_notation_allocate_space_for_cache(notation);
+    if(retvalue != 0){
+        printf("Error Occurred when allocating space for cache:\n%s\n", notation->errmsg);
+        return notation;
+    }
+
+
     retvalue = dice_notation_organize_tokens(notation);
     if(retvalue != 0){
         printf("Error Occurred when organizing tokens:\n%s\n", notation->errmsg);
@@ -972,7 +1064,7 @@ long dice_notation_run(DiceNotation *notation)
             // stash both of them in a temporary array that we can iterate through. that way we can process special types
             RealToken* temp_tokens[2] = { math_token->before, math_token->after };
             for(uint8_t temp_i = 0; temp_i < 2; temp_i++){
-                RealToken* temp_token = &temp_tokens[temp_i];
+                RealToken* temp_token = temp_tokens[temp_i];
                 if(temp_token == NULL){
                     printf("failed to accurately access temp cache for real token, got null value\n");
                     continue;
