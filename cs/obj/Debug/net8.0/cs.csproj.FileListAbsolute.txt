@@ -1,0 +1,15 @@
+/workspaces/dice-notation/cs/obj/Debug/net8.0/cs.GeneratedMSBuildEditorConfig.editorconfig
+/workspaces/dice-notation/cs/obj/Debug/net8.0/cs.AssemblyInfoInputs.cache
+/workspaces/dice-notation/cs/obj/Debug/net8.0/cs.AssemblyInfo.cs
+/workspaces/dice-notation/cs/obj/Debug/net8.0/cs.csproj.CoreCompileInputs.cache
+/workspaces/dice-notation/cs/obj/Debug/net8.0/cs.sourcelink.json
+/workspaces/dice-notation/cs/bin/Debug/net8.0/cs
+/workspaces/dice-notation/cs/bin/Debug/net8.0/cs.deps.json
+/workspaces/dice-notation/cs/bin/Debug/net8.0/cs.runtimeconfig.json
+/workspaces/dice-notation/cs/bin/Debug/net8.0/cs.dll
+/workspaces/dice-notation/cs/bin/Debug/net8.0/cs.pdb
+/workspaces/dice-notation/cs/obj/Debug/net8.0/cs.dll
+/workspaces/dice-notation/cs/obj/Debug/net8.0/refint/cs.dll
+/workspaces/dice-notation/cs/obj/Debug/net8.0/cs.pdb
+/workspaces/dice-notation/cs/obj/Debug/net8.0/cs.genruntimeconfig.cache
+/workspaces/dice-notation/cs/obj/Debug/net8.0/ref/cs.dll

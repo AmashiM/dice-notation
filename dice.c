@@ -18,8 +18,13 @@ void dice_notation_init()
 
 void dice_notation_debug()
 {
-    printf("# Sizes\n\tDiceNotation: %lu\n\tDiceNotationState: %lu\n\tDiceNotationCache: %lu\n\tDiceNotationCounters: %lu\n", sizeof(DiceNotation), sizeof(DiceNotationState), sizeof(DiceNotationCache), sizeof(DiceNotationCounters));
+    printf("# Sizes\n\tDiceNotation: %lu\n\tDiceNotationState: %lu\n\tDiceNotationCache: %lu\n\tDiceNotationCounters: %lu\n", sizeof(DiceNotation), sizeof(DiceState), sizeof(DiceNotationCache), sizeof(DiceCounters));
 }
+
+RangeCache* RangeCache_Create();
+int RangeCache_Alloc(RangeCache* cache, uint8_t size);
+int RangeCache_Add(RangeCache* cache, RangeToken* token);
+void RangeCache_Destroy(RangeCache* cache);
 
 long dice_roll(DiceToken* dice_token){
     unsigned int amount = 0;
@@ -192,11 +197,13 @@ uint8_t MathToken_GetPriority(enum TokenType type){
     }
 }
 
+
+
 // main operations
 int dice_notation_parse_text(DiceNotation* notation){
-    DiceNotationState* state = &notation->state;
+    DiceState* state = &notation->state;
     DiceNotationCache* cache = &notation->cache;
-    DiceNotationCounters* counters = &notation->counters;
+    DiceCounters* counters = &notation->counters;
 
     cache->tokens = calloc(sizeof(PairToken), state->length);
 
@@ -215,7 +222,6 @@ int dice_notation_parse_text(DiceNotation* notation){
         uint8_t handling_number = 0;
         PairToken* token = &cache->tokens[i];
         int value = 0;
-        
 
         switch(c){
             case ' ':
@@ -310,7 +316,7 @@ int dice_notation_parse_text(DiceNotation* notation){
 
 int dice_notation_allocate_space_for_cache(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
-    DiceNotationCounters* counters = &notation->counters;
+    DiceCounters* counters = &notation->counters;
 
     cache->dice = calloc(sizeof(DiceToken), counters->dice_count);
     if(cache->dice == NULL){
@@ -355,7 +361,7 @@ int dice_notation_allocate_space_for_cache(DiceNotation* notation){
 
 int dice_notation_organize_tokens(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
-    DiceNotationCounters* counters = &notation->counters;
+    DiceCounters* counters = &notation->counters;
 
     counters->group_priority = 0;
 
@@ -436,7 +442,7 @@ int dice_notation_organize_tokens(DiceNotation* notation){
 
 int dice_notation_define_dice(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
-    DiceNotationCounters* counters = &notation->counters;
+    DiceCounters* counters = &notation->counters;
 
     for(uint8_t j = 0; j < counters->dice_count; j++){
         printf("handling dice at index: %d\n", j);
@@ -558,7 +564,7 @@ int dice_notation_define_dice(DiceNotation* notation){
 // this should be called after groups are defined.
 int dice_notation_define_math(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
-    DiceNotationCounters* counters = &notation->counters;
+    DiceCounters* counters = &notation->counters;
 
     uint8_t check_groups = 0;
 
@@ -723,7 +729,7 @@ int dice_notation_define_math(DiceNotation* notation){
 
 int dice_notation_define_keep(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
-    DiceNotationCounters* counters = &notation->counters;
+    DiceCounters* counters = &notation->counters;
 
     for(uint8_t i = 0; i < counters->keep_count; i++){
         KeepToken* keep_token = &cache->keep[i];
@@ -747,7 +753,7 @@ int dice_notation_define_keep(DiceNotation* notation){
 
 int dice_notation_define_groups(DiceNotation* notation){
     DiceNotationCache* cache = &notation->cache;
-    DiceNotationCounters* counters = &notation->counters;
+    DiceCounters* counters = &notation->counters;
 
     if(counters->group_start_count != counters->group_end_count){
         dice_notation_set_error(notation, DN_ERROR_LOGIC, "group start count should be equal to group end count");
@@ -834,6 +840,41 @@ int dice_notation_define_groups(DiceNotation* notation){
     return 0;
 }
 
+int dice_notation_define_ranges(DiceNotation* notation){
+    DiceNotationCache* cache = &notation->cache;
+    DiceCounters* counters = &notation->counters;
+
+    uint64_t total_ranges = counters->number_count + counters->math_count + counters->dice_count + counters->group_count;
+    RangeToken* ranges = calloc(sizeof(RangeToken), total_ranges);
+    uint64_t range_pos = 0;
+    
+    for(uint8_t i = 0; i < counters->number_count; i++){
+        RangeToken* token = &ranges[range_pos + i];
+        NumberToken* number_token = &cache->number[i];
+        token->start = number_token->location;
+        token->end = number_token->location;
+        token->type = RESULT_NUMBER;
+        token->out_value = (long)number_token->value;
+    }
+    range_pos = range_pos + counters->number_count;
+
+    for(uint8_t i = 0; i < counters->math_count; i++){
+        RangeToken* token = &ranges[range_pos+i];
+        MathToken* math_token = &cache->math[i];
+        token->start = math_token->before;
+        token->end = math_token->after;
+        token->type = RESULT_MATH;
+        token->out_value = 0;
+    }
+    range_pos = range_pos + counters->math_count;
+
+    for(uint8_t i = 0; i < counters->dice_count; i++){
+        RangeToken* token = &ranges[range_pos+i];
+    }
+
+    return 0;
+}
+
 void dice_notation_clean(DiceNotation* notation){
     if(notation == NULL){
         return;
@@ -891,9 +932,13 @@ void dice_notation_clean(DiceNotation* notation){
     notation = NULL;
 }
 
+void DiceToken_Print(DiceToken* dice_token){
+    printf("[%p] Dice(sides: %p, amount: %p, keep_high: %p, keep_low: %p)", dice_token, dice_token->sides, dice_token->amount, dice_token->keep_high, dice_token->keep_low);
+}
+
 void dice_notation_print_data(DiceNotation* notation){
     DiceNotationCache* cache = (DiceNotationCache*)&notation->cache;
-    DiceNotationCounters* counters = (DiceNotationCounters*)&notation->counters;
+    DiceCounters* counters = (DiceCounters*)&notation->counters;
 
     for(uint64_t i = 0; i < (uint64_t)counters->real_token_count; i++){
         RealToken* real_token = (RealToken*)&cache->real_tokens[i];
@@ -907,8 +952,7 @@ void dice_notation_print_data(DiceNotation* notation){
                 printf("NONE");
                 break;
             case TOKEN_DICE: {
-                DiceToken* dice_token = (DiceToken*)real_token->special;
-                printf("[%p] Dice(sides: %p, amount: %p, keep_high: %p, keep_low: %p)", dice_token, dice_token->sides, dice_token->amount, dice_token->keep_high, dice_token->keep_low);
+                DiceToken_Print((DiceToken*)real_token->special);
             }; break;
             case TOKEN_GROUP: {
                 GroupToken* group_token = (GroupToken*)real_token->special;
@@ -957,9 +1001,9 @@ DiceNotation* dice_notation(const char *text)
 
     dice_notation_set_error(notation, 0, NULL);
 
-    memset(&notation->state, 0, sizeof(DiceNotationState));
+    memset(&notation->state, 0, sizeof(DiceState));
     memset(&notation->cache, 0, sizeof(DiceNotationCache));
-    memset(&notation->counters, 0, sizeof(DiceNotationCounters));
+    memset(&notation->counters, 0, sizeof(DiceCounters));
 
     if(text == NULL){
         dice_notation_set_error(notation, DN_ERROR_BAD_ARG, "text cannot be null\n");
@@ -1027,6 +1071,8 @@ DiceNotation* dice_notation(const char *text)
         return notation;
     }
 
+    retvalue = dice_notation_define_ranges(notation);
+
     dice_notation_print_data(notation);
 
     return notation;
@@ -1034,8 +1080,8 @@ DiceNotation* dice_notation(const char *text)
 
 long dice_notation_run(DiceNotation *notation)
 {
-    DiceNotationCache* cache;
-    DiceNotationCounters* counters;
+    DiceNotationCache* cache = &notation->cache;
+    DiceCounters* counters = &notation->counters;
 
     for(uint8_t group_pos = 0; group_pos < counters->group_count; group_pos++){
         GroupToken* group_token = &cache->group[group_pos];
@@ -1105,4 +1151,89 @@ long dice_notation_run(DiceNotation *notation)
     }
 
     return 0;
+}
+
+RangeCache* RangeCache_Create(){
+    RangeCache* cache = calloc(sizeof(RangeCache), 1);
+    if(cache == NULL){
+        printf("failed to allocate space for range cache\n");
+        return cache;
+    }
+    cache->capacity = 1;
+    cache->pos = 0;
+
+    cache->tokens = calloc(sizeof(RangeToken), cache->capacity * DN_RANGE_CACHE_ALLOC_SZ);
+    if(cache->tokens == NULL){
+        printf("failed to allocate space for cache tokens\n");
+        free(cache);
+        cache = NULL;
+        return cache;
+    }
+
+    return cache;
+}
+
+int RangeCache_Alloc(RangeCache* cache, uint8_t size){
+    if(cache == NULL){
+        return 1;
+    }
+    if(cache->tokens == NULL){
+        return 2;
+    }
+
+    if(size == cache->capacity){
+        // redundant
+        return 0;
+    }
+
+    uint64_t new_size = sizeof(RangeToken) * (DN_RANGE_CACHE_ALLOC_SZ * size);
+
+    if(new_size < cache->pos){
+        return 4; // cannot realloc to a size smaller than our stored values
+    }
+
+    void* new_cache_tokens = realloc(cache->tokens, new_size);
+    if(new_cache_tokens == NULL){
+        return 3;
+    }
+    cache->tokens = new_cache_tokens;
+    cache->capacity = size;
+
+    return 0;
+}
+
+int RangeCache_Add(RangeCache* cache, RangeToken* token){
+    if(cache == NULL){
+        return 1;
+    }
+    if(cache->tokens == NULL){
+        return 2;
+    }
+
+    if(token == NULL){
+        return 3;
+    }
+
+    memcpy(&cache->tokens[cache->pos], token, sizeof(RangeToken));
+
+    if((cache->pos + 1) > (cache->capacity - 1)){
+        int retvalue = RangeCache_Alloc(cache, cache->capacity+1);
+        if(retvalue != 0){
+            return 10 + retvalue; // assuming we don't have more than 10 errors in the base function
+        }
+    }
+
+    return 0;
+}
+
+void RangeCache_Destroy(RangeCache* cache){
+    if(cache != NULL){
+        if(cache->tokens != NULL){
+            free(cache->tokens);
+            cache->tokens = NULL;
+        }
+
+        free(cache);
+        cache = NULL;
+    }
 }

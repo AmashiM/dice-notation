@@ -18,6 +18,28 @@
 #define DN_ERROR_LOGIC 5
 #define DN_ERROR_SYNTAX 6
 
+#define DN_RANGE_CACHE_ALLOC_SZ 8
+
+enum RangeResultType {
+    RESULT_NUMBER,
+    RESULT_DICE,
+    RESULT_MATH
+};
+
+typedef struct tagRangeToken {
+    RealToken* start;
+    RealToken* end;
+    long out_value;
+    enum RangeResultType type;
+    uint32_t priority;
+} RangeToken;
+
+typedef struct tagRangeCache {
+    RangeToken* tokens;
+    uint64_t capacity;
+    uint64_t pos;
+} RangeCache;
+
 typedef struct tagDiceNotationCache {
     PairToken* tokens;
 
@@ -34,7 +56,7 @@ typedef struct tagDiceNotationCache {
     RealToken* real_tokens;
 } DiceNotationCache;
 
-typedef struct tagDiceNotationCounters {
+typedef struct tagDiceCounters {
     uint64_t real_token_count;
 
     uint8_t dice_count;
@@ -58,17 +80,17 @@ typedef struct tagDiceNotationCounters {
     uint8_t group_end_pos;
 
     uint8_t group_pos;
-} DiceNotationCounters;
+} DiceCounters;
 
-typedef struct tagDiceNotationState {
+typedef struct tagDiceState {
     size_t length;
     const char* text;
-} DiceNotationState;
+} DiceState;
 
 typedef struct tagDiceNotation {
     DiceNotationCache cache;
-    DiceNotationState state;
-    DiceNotationCounters counters;
+    DiceState state;
+    DiceCounters counters;
     int errcode;
     const char* errmsg;
 } DiceNotation;

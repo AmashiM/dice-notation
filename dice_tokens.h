@@ -108,4 +108,12 @@ typedef struct tagGroupPlacementToken {
     GroupToken* group;
 } GroupPlacementToken;
 
+
+// typedef struct tagRangeToken {
+//     RealToken* start;
+//     RealToken* end;
+//     ResultToken* result;
+//     uint8_t is_math;
+// } RangeToken;
+
 #endif

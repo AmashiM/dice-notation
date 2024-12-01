@@ -1,0 +1,10 @@
+{
+    "python.REPL.enableREPLSmartSend": false,
+    "files.associations": {
+        "*.tcc": "cpp",
+        "cerrno": "cpp",
+        "random": "cpp",
+        "limits": "cpp",
+        "string_view": "cpp"
+    }
+}
