@@ -25,3 +25,22 @@ int *DiceCounters::GetCounterFromType(TokenType type)
         default: return NULL;
     };
 }
+
+int *DiceBaseCounter_GetCounterFromType(DiceBaseCounter *counter, TokenType type)
+{
+    switch(type){
+        case TokenType::Dice: return &counter->dice;
+        case TokenType::Number: return &counter->numbers;
+        case TokenType::Add: return &counter->add;
+        case TokenType::Sub: return &counter->sub;
+        case TokenType::Mult: return &counter->mult;
+        case TokenType::Div: return &counter->div;
+        case TokenType::GroupStart: return &counter->group_start;
+        case TokenType::GroupEnd: return &counter->group_end;
+        case TokenType::KeepLow:
+        case TokenType::KeepHigh: return &counter->keep;
+        case TokenType::TypeGroup: return &counter->group;
+        case TokenType::Unexpected:
+        default: return NULL;
+    };
+}

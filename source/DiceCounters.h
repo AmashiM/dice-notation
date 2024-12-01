@@ -20,6 +20,7 @@ typedef struct tagDiceBaseCounter {
     int group;
 } DiceBaseCounter;
 
+int* DiceBaseCounter_GetCounterFromType(DiceBaseCounter* counter, TokenType type);
 
 class DiceCounters {
 public:
